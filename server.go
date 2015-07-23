@@ -1,0 +1,338 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"runtime"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+const (
+	SHOW_LOCKS          = 10
+	SERVER_LISTEN       = "0.0.0.0:34567"
+	SERVER_PERF_LISTEN  = "0.0.0.0:34568"
+	ENABLE_PERF_PROFILE = true
+	DELAY_SECONDS       = 10
+	LOG_FILE            = "server.log"
+)
+
+var (
+	logger      *log.Logger
+	allShow     *AllShow
+	signal_chan chan os.Signal // 处理信号的channel
+	showTimer   *ShowTimer
+)
+
+// 保存每个Show启动的定时器
+type ShowTimer struct {
+	Timers map[string]bool
+	Lock   *sync.RWMutex
+}
+
+// H5用户
+type H5User struct {
+	LastUpdate int64
+}
+
+// 每个Show
+type Show struct {
+	ShowID       string
+	Count        uint
+	H5CookieUser map[string]*H5User
+	UsersLocks   []*sync.RWMutex
+}
+
+// 所有的Show
+type AllShow struct {
+	Shows map[string]*Show
+	Lock  *sync.RWMutex
+}
+
+// H5页面POST来的数据
+type ShowClientData struct {
+	ShowID string `json:"show_id"`
+}
+
+func init() {
+	// init logging
+	log_file, err := os.OpenFile(LOG_FILE, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+	logger = log.New(log_file, "Server: ", log.Ldate|log.Ltime|log.Lshortfile)
+	ExtraInit()
+}
+
+func ExtraInit() {
+	allShow = new(AllShow)
+	allShow.Shows = make(map[string]*Show, 0)
+	allShow.Lock = new(sync.RWMutex)
+
+	showTimer = new(ShowTimer)
+	showTimer.Timers = make(map[string]bool, 0)
+	showTimer.Lock = new(sync.RWMutex)
+}
+
+func NewShow(show_id string) *Show {
+	var users_locks []*sync.RWMutex
+
+	show := new(Show)
+	show.ShowID = show_id
+	show.H5CookieUser = make(map[string]*H5User, 0)
+
+	for i := 0; i < SHOW_LOCKS; i++ {
+		lock := new(sync.RWMutex)
+		users_locks = append(users_locks, lock)
+	}
+	show.UsersLocks = users_locks
+
+	return show
+}
+
+func GetUserLock(show_id string, cookie_str string) (*sync.RWMutex, error) {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Println(err)
+		}
+	}()
+
+	var show *Show
+	var ok bool
+
+	// 根据cookie的值取得锁id
+	cookie_int, err := strconv.Atoi(cookie_str)
+	if err != nil {
+		logger.Println("failed convert show_id to integer")
+		return nil, fmt.Errorf("failed convert show_id to integer\n")
+	}
+
+	lock_id := cookie_int % SHOW_LOCKS
+
+	// 根据show_id取得Show
+	allShow.Lock.RLock()
+	if show, ok = allShow.Shows[show_id]; !ok {
+		logger.Println("can not find lock with show_id: ", show_id)
+		return nil, fmt.Errorf("can not find lock with show_id: %s", show_id)
+	}
+	allShow.Lock.RUnlock()
+
+	// 用lock_id在Show的锁列表中取得锁
+	return show.UsersLocks[lock_id], nil
+}
+
+func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Println(err)
+		}
+	}()
+
+	var show_client_data ShowClientData
+	var empty_cookie bool
+	var cookie_str string
+	var h5_user *H5User
+	var show *Show
+	var ok bool
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "X-Requested-With")
+
+	empty_cookie = false
+	cookie, err := r.Cookie("h5_user")
+
+	if err == nil {
+		cookie_str = strings.Trim(cookie.Value, " ")
+		if cookie_str == "" {
+			empty_cookie = true
+		}
+	}
+
+	// 如果cookie为空，则为用户设置cookie并返回
+	// cookie值为纳秒时间，一秒等于一千万纳秒
+	if err != nil || empty_cookie == true {
+		now := time.Now()
+		now_nano := int(now.UnixNano())
+		expiration := now.AddDate(3, 0, 0)
+		cookie_value := strconv.Itoa(now_nano)
+		cookie := http.Cookie{Name: "h5_user", Value: cookie_value, Expires: expiration, Domain: "127.0.0.1"}
+		http.SetCookie(w, &cookie)
+		logger.Printf("Set cookie for %s -> %s\n", r.RemoteAddr, cookie_value)
+		return
+	}
+
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		logger.Println(err)
+		http.Error(w, "read post body err", 500)
+		return
+	}
+
+	if len(data) == 0 {
+		logger.Println("Invalid data from cache client")
+		http.Error(w, "post body is empty", 404)
+		return
+	}
+
+	err = json.Unmarshal(data, &show_client_data)
+	if err != nil {
+		logger.Println(err)
+		http.Error(w, "json unmarshal error", 500)
+		return
+	}
+
+	allShow.Lock.RLock()
+	show, ok = allShow.Shows[show_client_data.ShowID]
+	allShow.Lock.RUnlock()
+
+	if ok {
+
+		user_lock, err := GetUserLock(show_client_data.ShowID, cookie_str)
+		if err != nil {
+			logger.Println(err)
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		user_lock.RLock()
+		if h5_user, ok = show.H5CookieUser[cookie_str]; ok {
+			logger.Println("got h5_user:", h5_user)
+			h5_user.LastUpdate = time.Now().Unix()
+		}
+		user_lock.RUnlock()
+
+		if !ok {
+			new_h5_user := new(H5User)
+			new_h5_user.LastUpdate = time.Now().Unix()
+			user_lock.Lock()
+			logger.Println("make new h5_user:", new_h5_user, "cookie:", cookie_str)
+			show.H5CookieUser[cookie_str] = new_h5_user
+			user_lock.Unlock()
+		}
+
+	} else {
+		show := NewShow(show_client_data.ShowID)
+		allShow.Lock.Lock()
+		logger.Printf("show_id %s is nil, make it\n", show_client_data.ShowID)
+		allShow.Shows[show_client_data.ShowID] = show
+		allShow.Lock.Unlock()
+
+		showTimer.Lock.Lock()
+		exists, ok := showTimer.Timers[show_client_data.ShowID]
+		if !ok || !exists {
+			go ShowTimeTicker(show_client_data.ShowID)
+			showTimer.Timers[show_client_data.ShowID] = true
+		}
+		showTimer.Lock.Unlock()
+	}
+}
+
+func ShowTimeTicker(show_id string) {
+	defer func() {
+		if err := recover(); err != nil {
+			showTimer.Lock.Lock()
+			showTimer.Timers[show_id] = false
+			showTimer.Lock.Unlock()
+			logger.Println(err)
+		}
+	}()
+
+	var show *Show
+	var ok bool
+
+	logger.Println("Start timer for show:", show_id)
+
+	c := time.Tick(1 * time.Second)
+	for _ = range c {
+		allShow.Lock.RLock()
+		show, ok = allShow.Shows[show_id]
+		if !ok {
+			logger.Printf("Can not find show: %s\n", show_id)
+		}
+		allShow.Lock.RUnlock()
+
+		var i uint = 0
+		now := time.Now().Unix()
+
+		if show != nil {
+			for key := range show.H5CookieUser {
+				user := show.H5CookieUser[key]
+				if now-user.LastUpdate < DELAY_SECONDS {
+					i += 1
+				}
+			}
+		}
+
+		show.Count = i
+		logger.Printf("Show [%s] online [%d]\n", show_id, i)
+	}
+}
+
+func signalCallback() {
+	for s := range signal_chan {
+		sig := s.String()
+		logger.Println("Got Signal: " + sig)
+
+		if s == syscall.SIGINT || s == syscall.SIGTERM {
+			logger.Println("Server exit...")
+			os.Exit(0)
+		}
+	}
+}
+
+func main() {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Println(err)
+			debug.PrintStack()
+		}
+	}()
+
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	// HOLD住POSIX SIGNAL
+	signal_chan = make(chan os.Signal, 10)
+	signal.Notify(signal_chan,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,
+		syscall.SIGPIPE,
+		syscall.SIGALRM,
+		syscall.SIGPIPE)
+
+	go signalCallback()
+
+	// 启动性能调试接口
+	if ENABLE_PERF_PROFILE == true {
+		go func() {
+			http.ListenAndServe(SERVER_PERF_LISTEN, nil)
+		}()
+	}
+
+	http.HandleFunc("/api/live_show", ShowIDHandler)
+
+	s := &http.Server{
+		Addr:           SERVER_LISTEN,
+		Handler:        nil,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
+	s.SetKeepAlivesEnabled(false)
+
+	logger.Println("Server listen on:", SERVER_LISTEN)
+	logger.Fatal(s.ListenAndServe())
+}
