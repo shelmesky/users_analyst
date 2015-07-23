@@ -333,6 +333,6 @@ func main() {
 
 	s.SetKeepAlivesEnabled(false)
 
-	logger.Println("Server listen on:", SERVER_LISTEN)
+	logger.Printf("Server [PID: %d] listen on [%s]\n", os.Getpid(), SERVER_LISTEN)
 	logger.Fatal(s.ListenAndServe())
 }
