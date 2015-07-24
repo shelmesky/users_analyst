@@ -84,6 +84,7 @@ func ExtraInit() {
 	showTimer.Lock = new(sync.RWMutex)
 }
 
+// 创建新的Show结构体
 func NewShow(show_id string) *Show {
 	var users_locks []*sync.RWMutex
 
@@ -100,6 +101,7 @@ func NewShow(show_id string) *Show {
 	return show
 }
 
+// 根据cookie内容取模获取对应的读写锁
 func GetUserLock(show_id string, cookie_str string) (*sync.RWMutex, error) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -131,6 +133,7 @@ func GetUserLock(show_id string, cookie_str string) (*sync.RWMutex, error) {
 	return show.UsersLocks[lock_id], nil
 }
 
+// 接收H5页面的/api/live_show请求
 func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -238,6 +241,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// 为每个Show启动定时器
 func ShowTimeTicker(show_id string) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -297,6 +301,7 @@ func ShowTimeTicker(show_id string) {
 	}
 }
 
+// 信号回调
 func signalCallback() {
 	for s := range signal_chan {
 		sig := s.String()
