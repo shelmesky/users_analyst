@@ -241,9 +241,6 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 func ShowTimeTicker(show_id string) {
 	defer func() {
 		if err := recover(); err != nil {
-			showTimer.Lock.Lock()
-			showTimer.Timers[show_id] = false
-			showTimer.Lock.Unlock()
 			logger.Println(err)
 		}
 	}()
@@ -254,6 +251,7 @@ func ShowTimeTicker(show_id string) {
 	logger.Println("Start timer for show:", show_id)
 
 	c := time.Tick(1 * time.Second)
+
 	for _ = range c {
 		allShow.Lock.RLock()
 		show, ok = allShow.Shows[show_id]
@@ -274,8 +272,28 @@ func ShowTimeTicker(show_id string) {
 			}
 		}
 
-		show.Count = i
-		logger.Printf("Show [%s] online [%d]\n", show_id, i)
+		// Show有人观看
+		if i > 0 {
+			show.Count = i
+			logger.Printf("Show [%s] online [%d]\n", show_id, i)
+		}
+
+		// Show无人观看
+		// 应该退出定时器并清除Show相关的资源
+		if i == 0 {
+			// 删除Show
+			if _, ok := allShow.Shows[show_id]; ok {
+				delete(allShow.Shows, show_id)
+			}
+
+			// 删除Show的定时器状态
+			showTimer.Lock.Lock()
+			delete(showTimer.Timers, show_id)
+			showTimer.Lock.Unlock()
+
+			logger.Printf("Show [%s] has offline, clear resource...\n", show_id)
+			return
+		}
 	}
 }
 
