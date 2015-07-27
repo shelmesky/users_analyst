@@ -233,7 +233,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 
 		user_lock.RLock()
 		if h5_user, ok = show.H5CookieUser[cookie_str]; ok {
-			logger.Println("got h5_user:", h5_user)
+			//logger.Println("got h5_user:", h5_user)
 			h5_user.LastUpdate = time.Now().Unix()
 		}
 		user_lock.RUnlock()
@@ -243,7 +243,11 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 			new_h5_user.LastUpdate = time.Now().Unix()
 			user_lock.Lock()
 			logger.Println("make new h5_user:", new_h5_user, "cookie:", cookie_str)
-			show.H5CookieUser[cookie_str] = new_h5_user
+			if show != nil {
+				if show.H5CookieUser != nil {
+					show.H5CookieUser[cookie_str] = new_h5_user
+				}
+			}
 			user_lock.Unlock()
 		}
 
@@ -369,6 +373,15 @@ func signalCallback() {
 	}
 }
 
+func GC() {
+	for {
+		logger.Println("Start GC now...")
+		runtime.GC()
+		logger.Println("End GC now...")
+		time.Sleep(60 * time.Second)
+	}
+}
+
 func main() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -378,6 +391,9 @@ func main() {
 	}()
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	// 每60秒GC一次
+	go GC()
 
 	// HOLD住POSIX SIGNAL
 	signal_chan = make(chan os.Signal, 10)
