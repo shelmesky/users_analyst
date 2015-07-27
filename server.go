@@ -28,9 +28,8 @@ const (
 	ENABLE_PERF_PROFILE    = true
 	DELAY_SECONDS          = 10
 	LOG_FILE               = "server.log"
-	REPORT_SERVER_ADDRESS  = "http://analytics.bolo.me"
-	REPORT_SERVER_PUSH_URL = "/api/v1/live_show_update_attend"
-	REPORT_SERVER_KEY      = "i1qg+L=sZYprwTP9+^yq~Z7Qg5-g$O"
+	REPORT_SERVER_ADDRESS  = "http://192.168.1.221:8870"
+	REPORT_SERVER_PUSH_URL = "/v1/live_show_update_attend"
 )
 
 var (
@@ -42,11 +41,9 @@ var (
 
 // POST到分析服务的结构
 type ShowStatus struct {
-	TimeStamp   int64  `json:"ts"`
 	ShowID      string `json:"show_id"`
 	AttendTotal uint   `json:"attend_total"`
 	Channel     int64  `json:"channel"`
-	Sign        string `json:"sign"`
 }
 
 // 保存每个Show启动的定时器
@@ -313,14 +310,9 @@ func ShowTimeTicker(show_id string) {
 			show.Count = i
 			logger.Printf("Show [%s] online [%d]\n", show_id, i)
 
-			show_status.TimeStamp = time.Now().Unix()
-
 			show_status.AttendTotal = i
 			show_status.Channel = 1
 			show_status.ShowID = show_id
-			time_stamp_str := strconv.Itoa(int(show_status.TimeStamp))
-			sign := MD5(REPORT_SERVER_KEY + show_id + time_stamp_str)
-			show_status.Sign = sign
 
 			buf, err := json.Marshal(show_status)
 			if err != nil {

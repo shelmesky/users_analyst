@@ -8,7 +8,7 @@ import json
 import random
 
 SHOW_ID = "143796412990036"
-SERVER_URL = "http://stage.bolo.me:34567/api/live_show"
+SERVER_URL = "http://127.0.0.1:34567/api/live_show"
 
 
 def send_heartbeat(client_no, show_id, cookie_str, sleep_time):
