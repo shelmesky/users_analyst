@@ -213,7 +213,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = json.Unmarshal(data, &show_client_data)
 	if err != nil {
-		logger.Println(err)
+		logger.Printf("Unmarshal JSON err: %s, data: %s\n", err, data)
 		http.Error(w, "json unmarshal error", 500)
 		return
 	}
