@@ -330,15 +330,15 @@ func ShowTimeTicker(show_id string) {
 
 			buf_reader := bytes.NewReader(buf)
 			resp, err := http.Post(REPORT_SERVER_ADDRESS+REPORT_SERVER_PUSH_URL, "application/json", buf_reader)
-			if resp != nil {
-				defer resp.Body.Close()
-			}
 
 			if err != nil {
 				logger.Println("POST data to Push server failed:", err)
 				continue
 			}
 
+			if resp != nil {
+				resp.Body.Close()
+			}
 			logger.Println("Got response from report server:", resp.Status)
 		}
 
