@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -18,12 +21,15 @@ import (
 )
 
 const (
-	SHOW_LOCKS          = 10
-	SERVER_LISTEN       = "0.0.0.0:34567"
-	SERVER_PERF_LISTEN  = "0.0.0.0:34568"
-	ENABLE_PERF_PROFILE = true
-	DELAY_SECONDS       = 10
-	LOG_FILE            = "server.log"
+	SHOW_LOCKS             = 10
+	SERVER_LISTEN          = "0.0.0.0:34567"
+	SERVER_PERF_LISTEN     = "0.0.0.0:34568"
+	ENABLE_PERF_PROFILE    = true
+	DELAY_SECONDS          = 10
+	LOG_FILE               = "server.log"
+	REPORT_SERVER_ADDRESS  = "http://analytics.bolo.me"
+	REPORT_SERVER_PUSH_URL = "/api/v1/live_show_update_attend"
+	REPORT_SERVER_KEY      = "i1qg+L=sZYprwTP9+^yq~Z7Qg5-g$O"
 )
 
 var (
@@ -32,6 +38,15 @@ var (
 	signal_chan chan os.Signal // 处理信号的channel
 	showTimer   *ShowTimer
 )
+
+// POST到分析服务的结构
+type ShowStatus struct {
+	TimeStamp   int64  `json:"ts"`
+	ShowID      string `json:"show_id"`
+	AttendTotal uint   `json:"attend_total"`
+	Channel     int64  `json:"channel"`
+	Sign        string `json:"sign"`
+}
 
 // 保存每个Show启动的定时器
 type ShowTimer struct {
@@ -82,6 +97,13 @@ func ExtraInit() {
 	showTimer = new(ShowTimer)
 	showTimer.Timers = make(map[string]bool, 0)
 	showTimer.Lock = new(sync.RWMutex)
+}
+
+// 计算字符换的MD5
+func MD5(text string) string {
+	hashMD5 := md5.New()
+	io.WriteString(hashMD5, text)
+	return fmt.Sprintf("%x", hashMD5.Sum(nil))
 }
 
 // 创建新的Show结构体
@@ -148,9 +170,10 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 	var show *Show
 	var ok bool
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Origin", "http://stage.bolo.me")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "X-Requested-With")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 	empty_cookie = false
 	cookie, err := r.Cookie("h5_user")
@@ -169,7 +192,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		now_nano := int(now.UnixNano())
 		expiration := now.AddDate(3, 0, 0)
 		cookie_value := strconv.Itoa(now_nano)
-		cookie := http.Cookie{Name: "h5_user", Value: cookie_value, Expires: expiration, Domain: "127.0.0.1"}
+		cookie := http.Cookie{Name: "h5_user", Value: cookie_value, Expires: expiration, HttpOnly: true, MaxAge: 50000, Path: "/"}
 		http.SetCookie(w, &cookie)
 		logger.Printf("Set cookie for %s -> %s\n", r.RemoteAddr, cookie_value)
 		return
@@ -251,8 +274,12 @@ func ShowTimeTicker(show_id string) {
 
 	var show *Show
 	var ok bool
+	var show_status ShowStatus
 
 	logger.Println("Start timer for show:", show_id)
+
+	// 首先暂停5秒，等待用户的请求
+	time.Sleep(10 * time.Second)
 
 	c := time.Tick(1 * time.Second)
 
@@ -280,6 +307,34 @@ func ShowTimeTicker(show_id string) {
 		if i > 0 {
 			show.Count = i
 			logger.Printf("Show [%s] online [%d]\n", show_id, i)
+
+			show_status.TimeStamp = time.Now().Unix()
+
+			show_status.AttendTotal = i
+			show_status.Channel = 1
+			show_status.ShowID = show_id
+			time_stamp_str := strconv.Itoa(int(show_status.TimeStamp))
+			sign := MD5(REPORT_SERVER_KEY + show_id + time_stamp_str)
+			show_status.Sign = sign
+
+			buf, err := json.Marshal(show_status)
+			if err != nil {
+				logger.Println("Json marshal failed:", err)
+				continue
+			}
+
+			buf_reader := bytes.NewReader(buf)
+			resp, err := http.Post(REPORT_SERVER_ADDRESS+REPORT_SERVER_PUSH_URL, "application/json", buf_reader)
+			if resp != nil {
+				defer resp.Body.Close()
+			}
+
+			if err != nil {
+				logger.Println("POST data to Push server failed:", err)
+				continue
+			}
+
+			logger.Println("Got response from report server:", resp.Status)
 		}
 
 		// Show无人观看
