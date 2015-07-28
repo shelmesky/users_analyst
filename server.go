@@ -22,21 +22,23 @@ import (
 )
 
 const (
-	SHOW_LOCKS             = 10
+	SHOW_LOCKS             = 20
 	SERVER_LISTEN          = "0.0.0.0:34567"
 	SERVER_PERF_LISTEN     = "0.0.0.0:34568"
 	ENABLE_PERF_PROFILE    = true
 	DELAY_SECONDS          = 10
 	LOG_FILE               = "server.log"
-	REPORT_SERVER_ADDRESS  = "http://192.168.1.221:8870"
+	REPORT_SERVER_ADDRESS  = "http://stage.bolo.me"
 	REPORT_SERVER_PUSH_URL = "/v1/live_show_update_attend"
 )
 
 var (
-	logger      *log.Logger
-	allShow     *AllShow
-	signal_chan chan os.Signal // 处理信号的channel
-	showTimer   *ShowTimer
+	logger                *log.Logger
+	allShow               *AllShow
+	signal_chan           chan os.Signal // 处理信号的channel
+	showTimer             *ShowTimer
+	show_client_data_pool *sync.Pool
+	h5_user_pool          *sync.Pool
 )
 
 // POST到分析服务的结构
@@ -95,6 +97,18 @@ func ExtraInit() {
 	showTimer = new(ShowTimer)
 	showTimer.Timers = make(map[string]bool, 0)
 	showTimer.Lock = new(sync.RWMutex)
+
+	show_client_data_pool = &sync.Pool{
+		New: func() interface{} {
+			return new(ShowClientData)
+		},
+	}
+
+	h5_user_pool = &sync.Pool{
+		New: func() interface{} {
+			return new(H5User)
+		},
+	}
 }
 
 // 计算字符换的MD5
@@ -161,7 +175,6 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	var show_client_data ShowClientData
 	var empty_cookie bool
 	var cookie_str string
 	var h5_user *H5User
@@ -209,10 +222,13 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = json.Unmarshal(data, &show_client_data)
+	show_client_data := show_client_data_pool.Get().(*ShowClientData)
+
+	err = json.Unmarshal(data, show_client_data)
 	if err != nil {
 		logger.Printf("Unmarshal JSON err: %s, data: %s\n", err, data)
 		http.Error(w, "json unmarshal error", 500)
+		show_client_data_pool.Put(show_client_data)
 		return
 	}
 
@@ -226,6 +242,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			logger.Println(err)
 			http.Error(w, err.Error(), 500)
+			show_client_data_pool.Put(show_client_data)
 			return
 		}
 
@@ -264,6 +281,8 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		showTimer.Lock.Unlock()
 	}
+
+	show_client_data_pool.Put(show_client_data)
 }
 
 // 为每个Show启动定时器
@@ -301,6 +320,15 @@ func ShowTimeTicker(show_id string) {
 				user := show.H5CookieUser[key]
 				if now-user.LastUpdate < DELAY_SECONDS {
 					i += 1
+				} else {
+					user_lock, err := GetUserLock(show_id, key)
+					if err != nil {
+						logger.Println("Got user lock failed:", err)
+					}
+					user_lock.Lock()
+					delete(show.H5CookieUser, key)
+					user_lock.Unlock()
+					logger.Printf("User [%s] has offline.\n", key)
 				}
 			}
 		}

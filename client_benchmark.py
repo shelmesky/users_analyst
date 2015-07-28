@@ -9,6 +9,7 @@ import random
 
 SHOW_ID = "143796412990036"
 SERVER_URL = "http://127.0.0.1:34567/api/live_show"
+CLIENT_SLEEP_TIME = 3
 
 
 def send_heartbeat(client_no, show_id, cookie_str, sleep_time):
@@ -29,7 +30,7 @@ def start(num_of_clients):
     task_pool = []
     for i in range(num_of_clients):
         cookie_str = datetime.datetime.now().strftime("%H%M%S%f")
-        task = gevent.spawn(send_heartbeat, i, SHOW_ID, cookie_str, 3)
+        task = gevent.spawn(send_heartbeat, i, SHOW_ID, cookie_str, CLIENT_SLEEP_TIME)
         task_pool.append(task)
     gevent.wait(task_pool)
 
