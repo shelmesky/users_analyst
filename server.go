@@ -219,6 +219,13 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	show_client_data.ShowID = strings.Trim(show_client_data.ShowID, " ")
+	if show_client_data.ShowID == "" {
+		logger.Println("show id is empty\n")
+		http.Error(w, "show id is empty", 500)
+		return
+	}
+
 	allShow.Lock.RLock()
 	show, ok = allShow.Shows[show_client_data.ShowID]
 	allShow.Lock.RUnlock()
