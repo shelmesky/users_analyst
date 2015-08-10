@@ -203,7 +203,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 		now_nano := int(now.UnixNano())
 		expiration := now.AddDate(3, 0, 0)
 		cookie_value := strconv.Itoa(now_nano)
-		cookie := http.Cookie{Name: "h5_user", Value: cookie_value, Expires: expiration, HttpOnly: true, MaxAge: 50000, Path: "/"}
+		cookie := http.Cookie{Name: "h5_user", Value: cookie_value, Expires: expiration, MaxAge: 50000, Path: "/"}
 		http.SetCookie(w, &cookie)
 		logger.Printf("Set cookie for %s -> %s\n", r.RemoteAddr, cookie_value)
 		return
