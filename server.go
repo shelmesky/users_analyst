@@ -28,7 +28,7 @@ const (
 	ENABLE_PERF_PROFILE    = true
 	DELAY_SECONDS          = 10
 	LOG_FILE               = "server.log"
-	REPORT_SERVER_ADDRESS  = "http://stage.bolo.me"
+	REPORT_SERVER_ADDRESS  = "http://10.252.147.206"
 	REPORT_SERVER_PUSH_URL = "/v1/live_show_update_attend"
 )
 
@@ -181,7 +181,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 	var show *Show
 	var ok bool
 
-	w.Header().Set("Access-Control-Allow-Origin", "http://stage.bolo.me")
+	w.Header().Set("Access-Control-Allow-Origin", "http://a.bolo.me")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "X-Requested-With")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
