@@ -23,8 +23,8 @@ import (
 
 const (
 	SHOW_LOCKS             = 20
-	SERVER_LISTEN          = "0.0.0.0:34567"
-	SERVER_PERF_LISTEN     = "0.0.0.0:34568"
+	SERVER_LISTEN          = "0.0.0.0:54567"
+	SERVER_PERF_LISTEN     = "0.0.0.0:54568"
 	ENABLE_PERF_PROFILE    = true
 	DELAY_SECONDS          = 10
 	LOG_FILE               = "server.log"
