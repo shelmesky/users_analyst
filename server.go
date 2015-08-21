@@ -28,7 +28,7 @@ const (
 	ENABLE_PERF_PROFILE    = true
 	DELAY_SECONDS          = 10
 	LOG_FILE               = "server.log"
-	REPORT_SERVER_ADDRESS  = "http://10.252.147.206"
+	REPORT_SERVER_ADDRESS  = "http://10.252.147.206:9999"
 	REPORT_SERVER_PUSH_URL = "/v1/live_show_update_attend"
 )
 
@@ -235,7 +235,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 	show_client_data.ShowID = strings.Trim(show_client_data.ShowID, " ")
 	if show_client_data.ShowID == "" {
 		logger.Println("show id is empty\n")
-		http.Error(w, "show id is empty", 500)
+		//http.Error(w, "show id is empty", 500)
 		return
 	}
 
