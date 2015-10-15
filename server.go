@@ -181,7 +181,7 @@ func ShowIDHandler(w http.ResponseWriter, r *http.Request) {
 	var show *Show
 	var ok bool
 
-	w.Header().Set("Access-Control-Allow-Origin", "http://a.bolo.me")
+	w.Header().Set("Access-Control-Allow-Origin", "https://a.bolo.me")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "X-Requested-With")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
